@@ -4,29 +4,37 @@ This file provides guidance to AI assistants (Claude and others) working in this
 
 ## Repository Status
 
-This repository is currently **empty** — no source files, build system, or configuration have been committed yet. This CLAUDE.md serves as a foundation to be updated as the project evolves.
-
-When the project takes shape, update each section below to reflect the actual codebase.
+Active development — milestone 1 (Toilet Listings + Geolocation) is complete.
 
 ---
 
 ## Project Overview
 
-> **TODO:** Replace this section with a description of the project: its purpose, the problem it solves, and its primary users.
+**Toilet Finder** — a REST API for storing and querying public toilet locations by geographic proximity. Built with FastAPI, PostgreSQL, and PostGIS.
+
+The core value proposition is `GET /toilets/nearby?lat=x&lng=y&radius=500`, which returns toilets sorted by distance using PostGIS `ST_DWithin` + `ST_Distance` on a `geography` column.
 
 ---
 
 ## Repository Structure
 
-> **TODO:** Document the directory layout once source files exist. Example format:
-
 ```
 .
-├── src/           # Application source code
-├── tests/         # Test files
-├── docs/          # Documentation
-├── scripts/       # Utility / automation scripts
-└── CLAUDE.md      # This file
+├── app/
+│   ├── main.py        # FastAPI app, lifespan (DB init)
+│   ├── config.py      # Settings via pydantic-settings
+│   ├── database.py    # SQLAlchemy engine, session, Base, init_db()
+│   ├── models.py      # Toilet ORM model with PostGIS Geography column
+│   ├── schemas.py     # Pydantic request/response schemas
+│   └── routers/
+│       └── toilets.py # POST /toilets, GET /toilets/{id}, GET /toilets/nearby
+├── scripts/
+│   └── seed.py        # Seed DB with ~8 London toilet fixtures
+├── docker-compose.yml # postgis/postgis:16-3.4 + API service
+├── Dockerfile
+├── requirements.txt
+├── .env.example
+└── CLAUDE.md
 ```
 
 ---
@@ -35,56 +43,63 @@ When the project takes shape, update each section below to reflect the actual co
 
 ### Prerequisites
 
-> **TODO:** List required tools, runtimes, and versions (e.g., Node ≥ 20, Python ≥ 3.11, Go ≥ 1.22).
+- Docker + Docker Compose (recommended)
+- **or** Python ≥ 3.12 + a running PostgreSQL 16 instance with PostGIS 3.4
 
-### Installation
-
-> **TODO:** Provide the commands needed to get a local environment running, for example:
+### Installation (Docker — recommended)
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd <repo-name>
+docker compose up --build
+# API available at http://localhost:8000
+# Docs at http://localhost:8000/docs
+```
 
-# Install dependencies (adjust for actual package manager)
-npm install        # Node.js
-pip install -e .   # Python
-go mod download    # Go
+### Installation (local)
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # edit DATABASE_URL as needed
+uvicorn app.main:app --reload
+```
+
+### Seed data
+
+```bash
+# Inside the container:
+docker compose exec api python -m scripts.seed
+
+# Or locally (with .venv active):
+python -m scripts.seed
 ```
 
 ### Environment Variables
 
-> **TODO:** List required environment variables and where to obtain them. Never commit secrets.
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://toilets:toilets@localhost:5432/toilets` | SQLAlchemy DSN |
 
 ---
 
 ## Common Commands
 
-> **TODO:** Fill in actual commands once the build system is established.
-
 | Task | Command |
 |------|---------|
-| Install dependencies | `<command>` |
-| Run development server | `<command>` |
-| Run all tests | `<command>` |
-| Run linter | `<command>` |
-| Format code | `<command>` |
-| Build for production | `<command>` |
+| Start services | `docker compose up --build` |
+| Run API only (local) | `uvicorn app.main:app --reload` |
+| Seed database | `python -m scripts.seed` |
+| Interactive API docs | `http://localhost:8000/docs` |
 
 ---
 
 ## Testing
 
-> **TODO:** Describe the test framework, how to run tests, and any conventions for writing them.
-
-- **Framework:** TBD
-- **Run tests:** `<command>`
-- **Run a single test:** `<command>`
-- **Coverage report:** `<command>`
+- **Framework:** pytest (not yet configured — next step)
+- Tests will live in `tests/` mirroring the `app/` structure.
 
 ### Testing Conventions
 
-- Test files should live adjacent to source files or in a top-level `tests/` directory.
+- Test files should live in a top-level `tests/` directory.
 - Each public function/module should have corresponding tests.
 - Prefer unit tests for pure logic and integration tests for I/O boundaries.
 
