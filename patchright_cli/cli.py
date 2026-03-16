@@ -66,7 +66,7 @@ def _sn(ctx) -> str:
               help="Use a persistent browser profile.")
 @click.option("--profile", default=None, metavar="PATH",
               help="Custom browser profile directory.")
-@click.option("--headless", is_flag=True, help="Run in headless mode.")
+@click.option("--headless", is_flag=True, help="Run in headless mode (reduces stealth; not recommended for bot-protected sites).")
 @click.option("--extension", is_flag=True, hidden=True,
               help="(Reserved) Connect via browser extension.")
 @click.option("--config", default=None, hidden=True, metavar="FILE",

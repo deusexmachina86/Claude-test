@@ -223,7 +223,7 @@ async def cmd_open(sn: str, req: CommandRequest):
 
     channel = p.get("browser", "chrome")
     if channel in ("firefox", "webkit"):
-        channel = "chrome"  # patchright only supports Chromium
+        channel = "chrome"  # patchright only supports Chromium-based browsers
 
     profile_dir = p.get("profile")
     if not profile_dir:
@@ -231,9 +231,14 @@ async def cmd_open(sn: str, req: CommandRequest):
         session._temp_profile = profile_dir
     session.profile_dir = profile_dir
 
+    # Recommended patchright config for maximum stealth:
+    # - channel="chrome" uses real Google Chrome (better stealth than bare Chromium)
+    # - no_viewport=True lets the OS control window size (avoids viewport fingerprinting)
+    # - headless=False is strongly recommended; headless mode is easier to detect
+    # - Do NOT pass custom args, headers, or user_agent — they hurt stealth
     launch_kwargs: Dict[str, Any] = {
         "headless": p.get("headless", False),
-        "args": ["--no-sandbox", "--disable-setuid-sandbox"],
+        "no_viewport": True,
     }
     if channel != "chromium":
         launch_kwargs["channel"] = channel

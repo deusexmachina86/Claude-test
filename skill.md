@@ -14,8 +14,9 @@ allowed-tools: Bash(patchright-cli:*)
 
 ```bash
 pip install patchright
-patchright install chrome
-pip install patchright-cli  # or: pip install -e . from repo root
+patchright install chrome      # recommended: real Google Chrome for best stealth
+# patchright install chromium  # alternative: bare Chromium (less stealthy)
+pip install patchright-cli     # or: pip install -e . from repo root
 ```
 
 ## Quick start
@@ -264,10 +265,18 @@ patchright-cli click e3
 
 ## Stealth Tips
 
-Patchright works best when:
-- Using **Google Chrome** (`--browser=chrome`) rather than bare Chromium
-- Running in **non-headless mode** (default) for sites with aggressive Cloudflare checks
-- Combining with realistic delays and interaction patterns
+Patchright works best with the following config (applied automatically by `patchright-cli open`):
+
+| Setting | Value | Reason |
+|---|---|---|
+| `channel` | `chrome` (default) | Real Google Chrome is far less detectable than bare Chromium |
+| `no_viewport` | `True` | Lets the OS control window size; avoids viewport fingerprinting |
+| `headless` | `False` (default) | Headless mode is easily detected by Cloudflare and DataDome |
+| Custom args/headers | **none** | Adding flags or custom user-agents increases detection risk |
+
+- Do **not** set `--headless` on bot-protected sites
+- Do **not** add custom `--browser-args`, headers, or user-agent strings
+- Combine with realistic delays and natural mouse movements for maximum effectiveness
 
 ## Examples
 
