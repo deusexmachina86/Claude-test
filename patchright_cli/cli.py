@@ -256,10 +256,16 @@ def snapshot(ctx, filename):
 @cli.command()
 @click.argument("expression")
 @click.argument("ref", required=False)
+@click.option("--no-isolated", "no_isolated", is_flag=True,
+              help="Run in main context instead of isolated context (use to access window globals).")
 @click.pass_context
-def eval(ctx, expression, ref):
-    """Evaluate a JavaScript expression, optionally on an element ref."""
-    params = {"expression": expression}
+def eval(ctx, expression, ref, no_isolated):
+    """Evaluate a JavaScript expression, optionally on an element ref.
+
+    By default runs in an isolated ExecutionContext (Patchright's undetectable JS path).
+    Use --no-isolated only when you need to read window-level globals.
+    """
+    params = {"expression": expression, "isolated_context": not no_isolated}
     if ref:
         params["ref"] = ref
     _print(_c.send(_sn(ctx), "eval", params))
@@ -637,10 +643,16 @@ def network(ctx):
 
 @cli.command("run-code")
 @click.argument("code")
+@click.option("--no-isolated", "no_isolated", is_flag=True,
+              help="Run in main context instead of isolated context (use to access window globals).")
 @click.pass_context
-def run_code(ctx, code):
-    """Run arbitrary JavaScript CODE in the page context."""
-    _print(_c.send(_sn(ctx), "run-code", {"code": code}))
+def run_code(ctx, code, no_isolated):
+    """Run arbitrary JavaScript CODE in the page context.
+
+    By default runs in an isolated ExecutionContext (Patchright's undetectable JS path).
+    Use --no-isolated only when you need to access window-level globals.
+    """
+    _print(_c.send(_sn(ctx), "run-code", {"code": code, "isolated_context": not no_isolated}))
 
 
 @cli.command("tracing-start")

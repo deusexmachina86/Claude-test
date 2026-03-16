@@ -176,7 +176,15 @@ patchright-cli unroute
 patchright-cli console
 patchright-cli console warning
 patchright-cli network
+
+# Runs in isolated context by default (undetectable — recommended)
 patchright-cli run-code "document.querySelectorAll('a').length"
+patchright-cli eval "document.title"
+patchright-cli eval "el => el.textContent" e5
+
+# Use --no-isolated only when you must access window-level globals
+patchright-cli run-code --no-isolated "window.customGlobalVariable"
+
 patchright-cli tracing-start
 patchright-cli tracing-stop
 patchright-cli video-stop video.webm
@@ -275,8 +283,38 @@ Patchright works best with the following config (applied automatically by `patch
 | Custom args/headers | **none** | Adding flags or custom user-agents increases detection risk |
 
 - Do **not** set `--headless` on bot-protected sites
-- Do **not** add custom `--browser-args`, headers, or user-agent strings
+- Do **not** add custom `--browser-args`, headers, or user-agent strings — Patchright handles all patches automatically
+- The `console` API is **disabled** by Patchright; use a JS logger library if you need in-page logging
 - Combine with realistic delays and natural mouse movements for maximum effectiveness
+
+## Isolated ExecutionContext (How Patchright Avoids Detection)
+
+Regular Playwright sends `Runtime.enable` over CDP to evaluate JS — this is exactly what Cloudflare and DataDome watch for. Patchright instead runs JS in **isolated ExecutionContexts**, making evaluation invisible to detection systems.
+
+`patchright-cli` uses `isolated_context=True` on **every** `evaluate()` call by default, including internal calls for localStorage/sessionStorage. This is the right default for scraping protected sites.
+
+Use `--no-isolated` only when you need to read window-level globals set by the page itself:
+
+```bash
+# Default: undetectable isolated context
+patchright-cli eval "document.title"
+patchright-cli run-code "document.querySelectorAll('a').length"
+
+# Main context: use sparingly, only for window globals
+patchright-cli eval --no-isolated "window.someLibrary.version"
+patchright-cli run-code --no-isolated "window.customGlobalVariable"
+```
+
+## Shadow DOM Support
+
+Unlike vanilla Playwright, Patchright can interact with **closed Shadow DOM** elements:
+
+```bash
+# Interact with elements inside closed shadow roots
+patchright-cli eval "document.querySelector('custom-el').shadowRoot.querySelector('.price').innerText"
+```
+
+Via locators, use the `>>>` deep combinator or XPath across shadow boundaries.
 
 ## Examples
 

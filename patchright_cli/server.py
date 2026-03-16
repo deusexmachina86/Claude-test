@@ -451,12 +451,15 @@ async def cmd_eval(sn: str, req: CommandRequest):
     await require_open(session)
     expr = req.params.get("expression", "")
     ref = req.params.get("ref")
+    # isolated_context=True (default) executes JS in an isolated ExecutionContext,
+    # avoiding the Runtime.enable CDP command that anti-bot systems detect.
+    isolated = req.params.get("isolated_context", True)
     if ref:
         ref_info = resolve_ref(session, ref)
         el = await find_element(session.page, ref_info)
-        result = await el.evaluate(expr)
+        result = await el.evaluate(expr, isolated_context=isolated)
     else:
-        result = await session.page.evaluate(expr)
+        result = await session.page.evaluate(expr, isolated_context=isolated)
     return CommandResponse(success=True, data=str(result), snapshot=await take_snapshot(session))
 
 
@@ -730,7 +733,7 @@ _SS_LIST = """() => { const o = {}; for (let i=0;i<sessionStorage.length;i++){co
 async def cmd_ls_list(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
-    return CommandResponse(success=True, data=await session.page.evaluate(_LS_LIST))
+    return CommandResponse(success=True, data=await session.page.evaluate(_LS_LIST, isolated_context=True))
 
 
 @app.post("/sessions/{sn}/localstorage-get", response_model=CommandResponse)
@@ -738,7 +741,7 @@ async def cmd_ls_get(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
     key = req.params.get("key", "")
-    val = await session.page.evaluate(f"() => localStorage.getItem({json.dumps(key)})")
+    val = await session.page.evaluate(f"() => localStorage.getItem({json.dumps(key)})", isolated_context=True)
     return CommandResponse(success=True, data=val)
 
 
@@ -747,7 +750,7 @@ async def cmd_ls_set(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
     k, v = req.params.get("key", ""), req.params.get("value", "")
-    await session.page.evaluate(f"() => localStorage.setItem({json.dumps(k)},{json.dumps(v)})")
+    await session.page.evaluate(f"() => localStorage.setItem({json.dumps(k)},{json.dumps(v)})", isolated_context=True)
     return CommandResponse(success=True, data=f"Set {k}={v}")
 
 
@@ -756,7 +759,7 @@ async def cmd_ls_delete(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
     k = req.params.get("key", "")
-    await session.page.evaluate(f"() => localStorage.removeItem({json.dumps(k)})")
+    await session.page.evaluate(f"() => localStorage.removeItem({json.dumps(k)})", isolated_context=True)
     return CommandResponse(success=True, data=f"Deleted '{k}'")
 
 
@@ -764,7 +767,7 @@ async def cmd_ls_delete(sn: str, req: CommandRequest):
 async def cmd_ls_clear(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
-    await session.page.evaluate("() => localStorage.clear()")
+    await session.page.evaluate("() => localStorage.clear()", isolated_context=True)
     return CommandResponse(success=True, data="localStorage cleared.")
 
 
@@ -774,7 +777,7 @@ async def cmd_ls_clear(sn: str, req: CommandRequest):
 async def cmd_ss_list(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
-    return CommandResponse(success=True, data=await session.page.evaluate(_SS_LIST))
+    return CommandResponse(success=True, data=await session.page.evaluate(_SS_LIST, isolated_context=True))
 
 
 @app.post("/sessions/{sn}/sessionstorage-get", response_model=CommandResponse)
@@ -782,7 +785,7 @@ async def cmd_ss_get(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
     k = req.params.get("key", "")
-    val = await session.page.evaluate(f"() => sessionStorage.getItem({json.dumps(k)})")
+    val = await session.page.evaluate(f"() => sessionStorage.getItem({json.dumps(k)})", isolated_context=True)
     return CommandResponse(success=True, data=val)
 
 
@@ -791,7 +794,7 @@ async def cmd_ss_set(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
     k, v = req.params.get("key", ""), req.params.get("value", "")
-    await session.page.evaluate(f"() => sessionStorage.setItem({json.dumps(k)},{json.dumps(v)})")
+    await session.page.evaluate(f"() => sessionStorage.setItem({json.dumps(k)},{json.dumps(v)})", isolated_context=True)
     return CommandResponse(success=True, data=f"Set {k}={v}")
 
 
@@ -800,7 +803,7 @@ async def cmd_ss_delete(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
     k = req.params.get("key", "")
-    await session.page.evaluate(f"() => sessionStorage.removeItem({json.dumps(k)})")
+    await session.page.evaluate(f"() => sessionStorage.removeItem({json.dumps(k)})", isolated_context=True)
     return CommandResponse(success=True, data=f"Deleted '{k}'")
 
 
@@ -808,7 +811,7 @@ async def cmd_ss_delete(sn: str, req: CommandRequest):
 async def cmd_ss_clear(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
-    await session.page.evaluate("() => sessionStorage.clear()")
+    await session.page.evaluate("() => sessionStorage.clear()", isolated_context=True)
     return CommandResponse(success=True, data="sessionStorage cleared.")
 
 
@@ -884,7 +887,10 @@ async def cmd_run_code(sn: str, req: CommandRequest):
     session = get_session(sn)
     await require_open(session)
     code = req.params.get("code", "")
-    result = await session.page.evaluate(f"async () => {{ {code} }}")
+    # isolated_context=True is the default (and recommended) Patchright behaviour.
+    # Pass --no-isolated to access window globals when absolutely necessary.
+    isolated = req.params.get("isolated_context", True)
+    result = await session.page.evaluate(f"async () => {{ {code} }}", isolated_context=isolated)
     return CommandResponse(success=True, data=str(result) if result is not None else None,
                            snapshot=await take_snapshot(session))
 
