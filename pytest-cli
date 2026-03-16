@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""pytest-cli — a thin stateful wrapper around pytest."""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+STATE_FILE = Path(".pytest-cli-state.json")
+
+
+def load_state() -> dict:
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"last_failed": [], "last_exit_code": None, "last_args": []}
+
+
+def save_state(state: dict) -> None:
+    try:
+        STATE_FILE.write_text(json.dumps(state, indent=2))
+    except OSError:
+        pass
+
+
+def run_pytest(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
+    cmd = [sys.executable, "-m", "pytest"] + args
+    return subprocess.run(cmd, capture_output=capture, text=True)
+
+
+def collect_failed(result: subprocess.CompletedProcess) -> list[str]:
+    """Parse FAILED lines from pytest stdout."""
+    failed = []
+    for line in (result.stdout or "").splitlines():
+        if line.startswith("FAILED "):
+            node_id = line.split(" ")[1].strip()
+            failed.append(node_id)
+    return failed
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    extra = args.extra or []
+    pytest_args = []
+
+    if args.path:
+        pytest_args.append(args.path)
+    if args.keyword:
+        pytest_args += ["-k", args.keyword]
+    if args.marker:
+        pytest_args += ["-m", args.marker]
+    if args.verbose:
+        pytest_args.append("-v")
+    if args.quiet:
+        pytest_args.append("-q")
+    if args.stop_first:
+        pytest_args.append("-x")
+    if args.maxfail:
+        pytest_args += [f"--maxfail={args.maxfail}"]
+    if args.no_header:
+        pytest_args.append("--no-header")
+    if args.tb:
+        pytest_args += [f"--tb={args.tb}"]
+    if args.timeout:
+        pytest_args += [f"--timeout={args.timeout}"]
+
+    pytest_args += extra
+
+    result = run_pytest(pytest_args)
+    failed = collect_failed(result)
+    state = load_state()
+    state["last_failed"] = failed
+    state["last_exit_code"] = result.returncode
+    state["last_args"] = pytest_args
+    save_state(state)
+    return result.returncode
+
+
+def cmd_last_failed(args: argparse.Namespace) -> int:
+    state = load_state()
+    if not state.get("last_failed"):
+        print("No recorded failures.")
+        return 0
+    pytest_args = ["--lf"] + (args.extra or [])
+    if args.verbose:
+        pytest_args.append("-v")
+    result = run_pytest(pytest_args)
+    failed = collect_failed(result)
+    state["last_failed"] = failed
+    state["last_exit_code"] = result.returncode
+    save_state(state)
+    return result.returncode
+
+
+def cmd_collect(args: argparse.Namespace) -> int:
+    pytest_args = ["--collect-only", "-q"]
+    if args.path:
+        pytest_args.append(args.path)
+    if args.keyword:
+        pytest_args += ["-k", args.keyword]
+    if args.marker:
+        pytest_args += ["-m", args.marker]
+    return run_pytest(pytest_args).returncode
+
+
+def cmd_coverage(args: argparse.Namespace) -> int:
+    pytest_args = [f"--cov={args.source or '.'}", "--cov-report=term-missing"]
+    if args.path:
+        pytest_args.append(args.path)
+    if args.html:
+        pytest_args.append("--cov-report=html")
+    if args.xml:
+        pytest_args.append("--cov-report=xml")
+    if args.fail_under:
+        pytest_args += [f"--cov-fail-under={args.fail_under}"]
+    pytest_args += (args.extra or [])
+    return run_pytest(pytest_args).returncode
+
+
+def cmd_markers(args: argparse.Namespace) -> int:
+    return run_pytest(["--markers"]).returncode
+
+
+def cmd_fixtures(args: argparse.Namespace) -> int:
+    pytest_args = ["--fixtures"]
+    if args.path:
+        pytest_args.append(args.path)
+    return run_pytest(pytest_args).returncode
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    state = load_state()
+    if state.get("last_exit_code") is None:
+        print("No previous run recorded.")
+        return 0
+    exit_code = state["last_exit_code"]
+    status = "passed" if exit_code == 0 else "failed"
+    print(f"Last run: {status} (exit {exit_code})")
+    print(f"Last args: {' '.join(state.get('last_args', []))}")
+    failed = state.get("last_failed", [])
+    if failed:
+        print(f"\nFailed tests ({len(failed)}):")
+        for t in failed:
+            print(f"  {t}")
+    else:
+        print("No failed tests recorded.")
+    return 0
+
+
+def cmd_clear(args: argparse.Namespace) -> int:
+    if STATE_FILE.exists():
+        STATE_FILE.unlink()
+        print("State cleared.")
+    else:
+        print("No state file found.")
+    return 0
+
+
+def cmd_rerun(args: argparse.Namespace) -> int:
+    state = load_state()
+    last_args = state.get("last_args")
+    if not last_args:
+        print("No previous run to repeat.")
+        return 1
+    print(f"Re-running: pytest {' '.join(last_args)}")
+    result = run_pytest(last_args)
+    failed = collect_failed(result)
+    state["last_failed"] = failed
+    state["last_exit_code"] = result.returncode
+    save_state(state)
+    return result.returncode
+
+
+def cmd_debug(args: argparse.Namespace) -> int:
+    pytest_args = ["-s", "--tb=long"]
+    if args.path:
+        pytest_args.append(args.path)
+    if args.keyword:
+        pytest_args += ["-k", args.keyword]
+    pytest_args += (args.extra or [])
+    return run_pytest(pytest_args).returncode
+
+
+def cmd_parallel(args: argparse.Namespace) -> int:
+    workers = args.workers or "auto"
+    pytest_args = [f"-n={workers}"]
+    if args.path:
+        pytest_args.append(args.path)
+    pytest_args += (args.extra or [])
+    return run_pytest(pytest_args).returncode
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="pytest-cli",
+        description="Thin stateful wrapper around pytest.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    # run
+    p_run = sub.add_parser("run", help="Run tests.")
+    p_run.add_argument("path", nargs="?", help="Test path or file.")
+    p_run.add_argument("-k", dest="keyword", help="Filter by keyword expression.")
+    p_run.add_argument("-m", dest="marker", help="Filter by marker.")
+    p_run.add_argument("-v", "--verbose", action="store_true")
+    p_run.add_argument("-q", "--quiet", action="store_true")
+    p_run.add_argument("-x", "--stop-first", action="store_true", help="Stop after first failure.")
+    p_run.add_argument("--maxfail", type=int, metavar="N")
+    p_run.add_argument("--tb", choices=["short", "long", "no", "line", "native", "auto"], default="short")
+    p_run.add_argument("--no-header", action="store_true")
+    p_run.add_argument("--timeout", type=int, metavar="SECONDS")
+    p_run.add_argument("extra", nargs=argparse.REMAINDER, help="Extra args passed to pytest.")
+    p_run.set_defaults(func=cmd_run)
+
+    # last-failed
+    p_lf = sub.add_parser("last-failed", aliases=["lf"], help="Re-run only the tests that failed last time.")
+    p_lf.add_argument("-v", "--verbose", action="store_true")
+    p_lf.add_argument("extra", nargs=argparse.REMAINDER)
+    p_lf.set_defaults(func=cmd_last_failed)
+
+    # collect
+    p_col = sub.add_parser("collect", help="Collect (discover) tests without running them.")
+    p_col.add_argument("path", nargs="?")
+    p_col.add_argument("-k", dest="keyword")
+    p_col.add_argument("-m", dest="marker")
+    p_col.set_defaults(func=cmd_collect)
+
+    # coverage
+    p_cov = sub.add_parser("coverage", aliases=["cov"], help="Run tests with coverage reporting.")
+    p_cov.add_argument("path", nargs="?")
+    p_cov.add_argument("--source", metavar="SRC", help="Source path for coverage (default: .)")
+    p_cov.add_argument("--html", action="store_true", help="Also generate HTML report.")
+    p_cov.add_argument("--xml", action="store_true", help="Also generate XML report.")
+    p_cov.add_argument("--fail-under", type=int, metavar="PCT")
+    p_cov.add_argument("extra", nargs=argparse.REMAINDER)
+    p_cov.set_defaults(func=cmd_coverage)
+
+    # markers
+    p_mk = sub.add_parser("markers", help="List available markers.")
+    p_mk.set_defaults(func=cmd_markers)
+
+    # fixtures
+    p_fx = sub.add_parser("fixtures", help="List available fixtures.")
+    p_fx.add_argument("path", nargs="?")
+    p_fx.set_defaults(func=cmd_fixtures)
+
+    # status
+    p_st = sub.add_parser("status", help="Show state from the last run.")
+    p_st.set_defaults(func=cmd_status)
+
+    # clear
+    p_cl = sub.add_parser("clear", help="Clear saved state.")
+    p_cl.set_defaults(func=cmd_clear)
+
+    # rerun
+    p_rr = sub.add_parser("rerun", help="Repeat the exact last pytest invocation.")
+    p_rr.set_defaults(func=cmd_rerun)
+
+    # debug
+    p_db = sub.add_parser("debug", help="Run tests with verbose output and full tracebacks (-s --tb=long).")
+    p_db.add_argument("path", nargs="?")
+    p_db.add_argument("-k", dest="keyword")
+    p_db.add_argument("extra", nargs=argparse.REMAINDER)
+    p_db.set_defaults(func=cmd_debug)
+
+    # parallel
+    p_par = sub.add_parser("parallel", aliases=["par"], help="Run tests in parallel (requires pytest-xdist).")
+    p_par.add_argument("path", nargs="?")
+    p_par.add_argument("-n", "--workers", help="Number of workers (default: auto).")
+    p_par.add_argument("extra", nargs=argparse.REMAINDER)
+    p_par.set_defaults(func=cmd_parallel)
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
